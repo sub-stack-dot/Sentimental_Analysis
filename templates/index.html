@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Product Sentiment Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+    <div class="page-bg">
+        <div class="container py-4 py-md-5">
+            <div class="row g-4">
+                <div class="col-lg-5">
+                    <div class="card shadow-sm border-0 h-100 product-card">
+                        <img src="{{ product.image_url }}" alt="Product Image" class="card-img-top product-image" />
+                        <div class="card-body">
+                            <p class="text-uppercase product-tag mb-2">Featured Product</p>
+                            <h2 class="h4 fw-bold mb-2">{{ product.name }}</h2>
+                            <p class="text-muted mb-0">Explore what buyers are saying in real-time.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-7">
+                    <div class="card shadow-sm border-0 reviews-card">
+                        <div class="card-body p-4">
+                            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                                <h1 class="h4 mb-0 fw-bold">Customer Reviews</h1>
+                                <span class="badge bg-dark-subtle text-dark border">Live Sentiment</span>
+                            </div>
+
+                            {% if model_warning %}
+                            <div class="alert alert-warning py-2" role="alert">
+                                {{ model_warning }}
+                            </div>
+                            {% endif %}
+
+                            <div class="summary-bar mb-3">
+                                <div class="summary-pill positive-pill">
+                                    Positive Reviews: <strong id="positiveCount">{{ summary.positive }}</strong>
+                                </div>
+                                <div class="summary-pill negative-pill">
+                                    Negative Reviews: <strong id="negativeCount">{{ summary.negative }}</strong>
+                                </div>
+                            </div>
+
+                            <form id="reviewForm" class="mb-3" novalidate>
+                                <div class="input-group">
+                                    <input id="reviewInput" type="text" class="form-control" placeholder="Write your review..." maxlength="350" required />
+                                    <button type="submit" class="btn btn-primary px-4">Submit</button>
+                                </div>
+                                <div id="formError" class="text-danger small mt-2 d-none"></div>
+                            </form>
+
+                            <div id="reviewList" class="review-list">
+                                {% for review in reviews %}
+                                <div class="review-item {{ review.css_class }} {% if review.is_latest %}latest-review{% endif %}" data-review-id="{{ review.id }}">
+                                    <p class="review-text mb-2">{{ review.text }}</p>
+                                    <span class="sentiment-badge">
+                                        {{ review.sentiment }} {{ review.emoji }}
+                                    </span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const reviewForm = document.getElementById("reviewForm");
+        const reviewInput = document.getElementById("reviewInput");
+        const reviewList = document.getElementById("reviewList");
+        const positiveCount = document.getElementById("positiveCount");
+        const negativeCount = document.getElementById("negativeCount");
+        const formError = document.getElementById("formError");
+
+        function clearLatestHighlight() {
+            document.querySelectorAll(".review-item.latest-review").forEach((el) => {
+                el.classList.remove("latest-review");
+            });
+        }
+
+        function createReviewElement(review) {
+            const wrapper = document.createElement("div");
+            wrapper.className = `review-item ${review.css_class} latest-review`;
+            wrapper.setAttribute("data-review-id", review.id);
+
+            wrapper.innerHTML = `
+                <p class="review-text mb-2"></p>
+                <span class="sentiment-badge"></span>
+            `;
+
+            wrapper.querySelector(".review-text").textContent = review.text;
+            wrapper.querySelector(".sentiment-badge").textContent = `${review.sentiment} ${review.emoji}`;
+
+            return wrapper;
+        }
+
+        reviewForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+
+            const reviewText = reviewInput.value.trim();
+            if (!reviewText) {
+                formError.textContent = "Please type a review before submitting.";
+                formError.classList.remove("d-none");
+                return;
+            }
+
+            formError.classList.add("d-none");
+
+            try {
+                const response = await fetch("/predict", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ review: reviewText }),
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    formError.textContent = data.error || "Something went wrong. Please try again.";
+                    formError.classList.remove("d-none");
+                    return;
+                }
+
+                clearLatestHighlight();
+                const reviewElement = createReviewElement(data.review);
+                reviewList.prepend(reviewElement);
+
+                positiveCount.textContent = data.summary.positive;
+                negativeCount.textContent = data.summary.negative;
+
+                reviewInput.value = "";
+                reviewInput.focus();
+            } catch (error) {
+                formError.textContent = "Server connection failed. Please try again.";
+                formError.classList.remove("d-none");
+            }
+        });
+    </script>
+</body>
+</html>
